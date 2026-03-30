@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JSON para Excel - Expand Arrays</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+    .container {
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 4px 25px rgba(0,0,0,0.12);
+      text-align: center;
+      max-width: 620px;
+      width: 95%;
+    }
+    h1 { color: #2c3e50; }
+    .drop-zone {
+      border: 3px dashed #3498db;
+      padding: 50px 20px;
+      margin: 25px 0;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .drop-zone:hover { background: #ebf5ff; border-color: #2980b9; }
+    button {
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 14px 32px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover { background: #2980b9; }
+    #status { margin-top: 20px; font-size: 1.05em; line-height: 1.6; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>JSON → Excel (Arrays Expandidos)</h1>
+  <p>Agora expande arrays como <strong>clientes</strong> e <strong>parteContrarias</strong> em colunas separadas</p>
+
+  <div class="drop-zone" id="dropZone">
+    <p>📄 Arraste seu arquivo .json aqui<br>ou</p>
+    <button onclick="document.getElementById('fileInput').click()">Selecionar Arquivo JSON</button>
+    <input type="file" id="fileInput" accept=".json" style="display: none;">
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<script>
+// Função avançada de flatten com suporte a arrays de objetos
+function advancedFlatten(obj, prefix = '', result = {}) {
+  if (obj === null || obj === undefined) {
+    result[prefix || 'valor'] = obj;
+    return result;
+  }
+
+  if (Array.isArray(obj)) {
+    if (obj.length === 0) {
+      result[prefix || 'array_vazio'] = '';
+      return result;
+    }
+
+    if (typeof obj[0] === 'object' && obj[0] !== null) {
+      // === ARRAY DE OBJETOS (clientes, parteContrarias, etc.) ===
+      obj.forEach((item, index) => {
+        if (typeof item === 'object' && item !== null) {
+          Object.keys(item).forEach(key => {
+            const newKey = `${prefix}${prefix ? '_' : ''}${index}_${key}`;
+            result[newKey] = item[key];
+          });
+        } else {
+          result[`${prefix}_${index}`] = item;
+        }
+      });
+    } else {
+      // Array simples de valores
+      result[prefix || 'valores'] = obj.join(' | ');
+    }
+    return result;
+  }
+
+  if (typeof obj === 'object') {
+    for (let key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        const newPrefix = prefix ? `${prefix}.${key}` : key;
+        advancedFlatten(obj[key], newPrefix, result);
+      }
+    }
+    return result;
+  }
+
+  // Valor primitivo
+  result[prefix || 'valor'] = obj;
+  return result;
+}
+
+// Função principal
+function convertJsonToExcel(jsonData, fileName = "dados") {
+  let dataArray = jsonData;
+
+  // Detecta array principal automaticamente
+  const arrayKeys = ['resultado', 'data', 'items', 'rows', 'andamentos', 'registros'];
+  if (typeof jsonData === 'object' && jsonData !== null && !Array.isArray(jsonData)) {
+    for (let key of arrayKeys) {
+      if (Array.isArray(jsonData[key])) {
+        dataArray = jsonData[key];
+        console.log(`✅ Usando array da chave: "${key}"`);
+        break;
+      }
+    }
+  }
+
+  if (!Array.isArray(dataArray)) {
+    dataArray = [jsonData];
+  }
+
+  // Achata cada linha com expansão de arrays
+  const flattened = dataArray.map(item => advancedFlatten(item));
+
+  const ws = XLSX.utils.json_to_sheet(flattened);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Dados");
+
+  const outputName = fileName.replace('.json', '') + '_expandido.xlsx';
+  XLSX.writeFile(wb, outputName);
+
+  return flattened.length;
+}
+
+// ==================== Eventos ====================
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const status = document.getElementById('status');
+
+function processFile(file) {
+  if (!file.name.toLowerCase().endsWith('.json')) {
+    status.innerHTML = `<span style="color:red;">❌ Selecione um arquivo .json</span>`;
+    return;
+  }
+
+  status.innerHTML = `🔄 Processando <strong>${file.name}</strong>...`;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const jsonData = JSON.parse(e.target.result);
+      const rows = convertJsonToExcel(jsonData, file.name);
+
+      status.innerHTML = `
+        ✅ <strong>Conversão concluída!</strong><br><br>
+        Arquivo: <strong>${file.name}</strong><br>
+        Linhas: <strong>${rows}</strong><br>
+        <small>Arrays como "clientes" e "parteContrarias" foram expandidos em colunas separadas.</small>
+      `;
+
+      setTimeout(() => status.innerHTML = '', 8000);
+    } catch (err) {
+      status.innerHTML = `<span style="color:red;">❌ Erro: ${err.message}</span>`;
+    }
+  };
+  reader.readAsText(file);
+}
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.background = '#ebf5ff'; });
+dropZone.addEventListener('dragleave', () => { dropZone.style.background = ''; });
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.style.background = '';
+  if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+});
+
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) processFile(e.target.files[0]);
+});
+</script>
+
+</body>
+</html>
