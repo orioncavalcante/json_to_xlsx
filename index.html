@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JSON para Excel - Expand Arrays</title>
+  <title>JSON para Excel - Universal</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
@@ -42,8 +42,8 @@
 <body>
 
 <div class="container">
-  <h1>JSON → Excel (Arrays Expandidos)</h1>
-  <p>Agora expande arrays como <strong>clientes</strong> e <strong>parteContrarias</strong> em colunas separadas</p>
+  <h1>JSON → Excel (Universal)</h1>
+  <p>Detecta automaticamente os dados, independente do nome da chave ou formato, e expande arrays.</p>
 
   <div class="drop-zone" id="dropZone">
     <p>📄 Arraste seu arquivo .json aqui<br>ou</p>
@@ -106,23 +106,37 @@ function advancedFlatten(obj, prefix = '', result = {}) {
 function convertJsonToExcel(jsonData, fileName = "dados") {
   let dataArray = jsonData;
 
-  // Detecta array principal automaticamente
-  const arrayKeys = ['resultado', 'data', 'items', 'rows', 'andamentos', 'registros'];
-  if (typeof jsonData === 'object' && jsonData !== null && !Array.isArray(jsonData)) {
-    for (let key of arrayKeys) {
-      if (Array.isArray(jsonData[key])) {
-        dataArray = jsonData[key];
-        console.log(`✅ Usando array da chave: "${key}"`);
-        break;
+  // Busca recursivamente o MAIOR array dentro do JSON para usar como base de linhas.
+  // Isso resolve problemas com chaves arbitrárias como "Planilha1", "Sheet1", etc.
+  let largestArray = null;
+  let maxSize = -1;
+
+  function findMainArray(curr) {
+    if (Array.isArray(curr)) {
+      if (curr.length > maxSize) {
+        maxSize = curr.length;
+        largestArray = curr;
       }
+      // Continua a busca dentro dos itens caso haja arrays ainda maiores aninhados
+      curr.forEach(item => findMainArray(item));
+    } else if (typeof curr === 'object' && curr !== null) {
+      Object.values(curr).forEach(val => findMainArray(val));
     }
   }
 
-  if (!Array.isArray(dataArray)) {
+  findMainArray(jsonData);
+
+  // Se encontrou algum array no JSON, usamos ele como as linhas da tabela.
+  // Se não encontrou (ex: dicionário puro {"a": 1, "b": 2}), transformamos o objeto inteiro em 1 linha.
+  if (largestArray && largestArray.length > 0) {
+    dataArray = largestArray;
+    console.log(`✅ Array principal encontrado com ${dataArray.length} itens.`);
+  } else if (!Array.isArray(jsonData)) {
     dataArray = [jsonData];
+    console.log(`✅ Dicionário simples detectado. Convertendo para linha única.`);
   }
 
-  // Achata cada linha com expansão de arrays
+  // Achata cada linha com expansão de arrays menores
   const flattened = dataArray.map(item => advancedFlatten(item));
 
   const ws = XLSX.utils.json_to_sheet(flattened);
@@ -157,13 +171,13 @@ function processFile(file) {
       status.innerHTML = `
         ✅ <strong>Conversão concluída!</strong><br><br>
         Arquivo: <strong>${file.name}</strong><br>
-        Linhas: <strong>${rows}</strong><br>
-        <small>Arrays como "clientes" e "parteContrarias" foram expandidos em colunas separadas.</small>
+        Linhas geradas: <strong>${rows}</strong><br>
+        <small>A estrutura principal foi detectada e os dados foram processados com sucesso.</small>
       `;
 
       setTimeout(() => status.innerHTML = '', 8000);
     } catch (err) {
-      status.innerHTML = `<span style="color:red;">❌ Erro: ${err.message}</span>`;
+      status.innerHTML = `<span style="color:red;">❌ Erro ao processar o JSON: ${err.message}</span>`;
     }
   };
   reader.readAsText(file);
